@@ -40,6 +40,10 @@ else:
     failureTime = None
 
 dates = [targetDate + dt.timedelta(days=x) for x in range(-7,2)]
+# special case for target date between [2017.01.24,2017.02.15]
+if any(x >= dt.datetime.strptime("2017 01 24","%Y %m %d") or x <= dt.datetime.strptime("2017 02 15","%Y %m %d") for x in dates):
+    dates.append(dt.datetime.strptime("2017 02 16","%Y %m %d"))
+
 files = [str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip" for x in dates]
 files = "|".join(files)
 
