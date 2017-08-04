@@ -142,6 +142,7 @@ for each in tqdm(hDirs):
             df_all["time_lag"] = df_all[["termination_point","timestamp"]].groupby("termination_point").shift(1)
             df_all.loc[(df_all["termination_point"].apply(lambda x: re.search(targetTerminationPoint,x) is not None)) & 
                        (df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime),"fail"] = 1
+            del df_all["time_lag"]
         # write dataframe as pickle object
         df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
         df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
