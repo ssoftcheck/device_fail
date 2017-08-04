@@ -23,13 +23,13 @@ parser.add_argument("-x","--excel",const="F",choices=["F","f","T","t"],nargs="?"
 args = parser.parse_args()
 
 # create regex for the dates based on the target date
-ziploc = args.ziploc # "C:/Users/AB58342/Documents/device failures/data/"
+ziploc = args.ziploc 
 tempDir = ziploc + "temp/"
 
-targetDate = dt.datetime.strptime(args.targetDate,"%d/%m/%Y") # dt.datetime.strptime("21/3/2017","%d/%m/%Y")
-targetNode = args.targetNode # "ATLNGAMAO50080604A"
+targetDate = dt.datetime.strptime(args.targetDate,"%d/%m/%Y") 
+targetNode = args.targetNode 
 if args.targetTerminationPoint is not None:
-    targetTerminationPoint = args.targetTerminationPoint # "10-A-1"
+    targetTerminationPoint = args.targetTerminationPoint
     targetTerminationPoint = r"^" + targetTerminationPoint.replace("-",r"\-")
 else:
     targetTerminationPoint = None
@@ -41,7 +41,7 @@ else:
 
 dates = [targetDate + dt.timedelta(days=x) for x in range(-7,2)]
 # special case for target date between [2017.01.24,2017.02.15]
-if any(x >= dt.datetime.strptime("2017 01 24","%Y %m %d") or x <= dt.datetime.strptime("2017 02 15","%Y %m %d") for x in dates):
+if any(x >= dt.datetime.strptime("2017 01 24","%Y %m %d") and x <= dt.datetime.strptime("2017 02 15","%Y %m %d") for x in dates):
     dates.append(dt.datetime.strptime("2017 02 16","%Y %m %d"))
 
 files = [str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip" for x in dates]
