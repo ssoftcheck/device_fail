@@ -139,6 +139,7 @@ for each in tqdm(hDirs):
                        (df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime),"fail"] = 1
         # write dataframe as pickle object
         df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
+        df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
         if args.excel in ["T","t"]:
             df_all.to_excel(ziploc + each + each.replace(r"/","")  + ".xlsx",index=False)
         del df_all
