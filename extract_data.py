@@ -41,7 +41,7 @@ else:
 
 dates = [targetDate + dt.timedelta(days=x) for x in range(-7,2)]
 # special case for target date between [2017.01.24,2017.02.15]
-if any(x >= dt.datetime.(2017,1,24) and x <= dt.datetime(2017,2,15) for x in dates):
+if any(x >= dt.datetime(2017,1,24) and x <= dt.datetime(2017,2,15) for x in dates):
     dates.append(dt.datetime(2017,2,16))
 
 files = [str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip" for x in dates]
