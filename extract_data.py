@@ -120,6 +120,7 @@ print("Combining Processed csv Files by Termination Point")
 hDirs = [x.group(0) + "/" for x in [re.search(r"^h\_.+",x,re.IGNORECASE) for x in os.listdir(ziploc)] if x is not None]
 for each in tqdm(hDirs):
     csv = [x.group(0) for x in [re.search(r".+\.csv$",x,re.IGNORECASE) for x in os.listdir(ziploc + each)] if x is not None]
+    csv = [x for x in csv if not x.startswith("h_")]
     for _csv_ in csv:
         df = pd.read_csv(ziploc + each + _csv_)
         # now remove csv
