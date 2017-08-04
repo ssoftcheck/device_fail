@@ -129,15 +129,16 @@ for each in tqdm(hDirs):
             df_all = df.copy()
         else:
             df_all = df_all.append(df)
-    df_all = df_all.sort_values(by=["node_id","chassis_id","chassis_type","termination_point","timestamp"])
-    # TODO: add creation of failure column
-    if failureTime is not None:
-        df_all["fail"] = 0
-        df_all["time_lag"] = df_all[["termination_point","timestamp"]].groupby("termination_point").shift(1)
-        df_all.loc[(df_all["termination_point"].apply(lambda x: re.search(targetTerminationPoint,x) is not None)) & 
-                   (df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime),"fail"] = 1
-    # write dataframe as pickle object
-    df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
-    if args.excel in ["T","t"]:
-        df_all.to_excel(ziploc + each + each.replace(r"/","")  + ".xlsx",index=False)
-    del df_all
+    if len(csv) > 0:
+        df_all = df_all.sort_values(by=["node_id","chassis_id","chassis_type","termination_point","timestamp"])
+        # TODO: add creation of failure column
+        if failureTime is not None:
+            df_all["fail"] = 0
+            df_all["time_lag"] = df_all[["termination_point","timestamp"]].groupby("termination_point").shift(1)
+            df_all.loc[(df_all["termination_point"].apply(lambda x: re.search(targetTerminationPoint,x) is not None)) & 
+                       (df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime),"fail"] = 1
+        # write dataframe as pickle object
+        df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
+        if args.excel in ["T","t"]:
+            df_all.to_excel(ziploc + each + each.replace(r"/","")  + ".xlsx",index=False)
+        del df_all
