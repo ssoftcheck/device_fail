@@ -15,20 +15,21 @@ from tqdm import tqdm
 # create regex for the dates based on the target date
 targetDate = dt.datetime.strptime("21/3/2017","%d/%m/%Y")
 targetNode = "ATLNGAMAO50080604A"
+ziploc = "C:/Users/AB58342/Documents/device failures/data/"
+tempDir = ziploc + "temp/"
+
 dates = [targetDate + dt.timedelta(days=x) for x in range(-7,2)]
 files = [str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip" for x in dates ]
 files = "|".join(files)
 
-# TODO: connect to server and download files into ziploc
+# TODO: connect to server and download files into ziploc, or get packages on server to run directly
 
-ziploc = "C:/Users/AB58342/Documents/device failures/data/"
 
 # find the exact file names for the relevant targetDate
 fileList = os.listdir(ziploc)
 targetFiles = [x.group(0) for x in [re.search(files,x,re.IGNORECASE)  for x in fileList] if x is not None]
 
 # unzip the files
-tempDir = ziploc + "temp/"
 if not os.path.exists(tempDir):
     os.mkdir(tempDir)
 for tf in targetFiles:
@@ -90,7 +91,6 @@ for item in tqdm(csvList):
 for each in os.listdir(tempDir):
     os.remove(tempDir + each)
 os.removedirs(tempDir)
-
 
 # assemble datasets
 # TODO: failure = datetime here to create event column
