@@ -12,6 +12,7 @@ import datetime as dt
 import re
 from tqdm import tqdm
 import argparse
+from shutil import copyfile
 
 parser = argparse.ArgumentParser(description="Script to exctract data")
 parser.add_argument("-l","--ziploc", help="location of zip files",required=True)
@@ -146,6 +147,12 @@ for each in tqdm(hDirs):
         # write dataframe as pickle object
         df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
         df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
+        # copy to special folder for files that have events
+        if df_all["fail"].sum() > 0:
+            if not os.path.exists(ziploc + "failure_files/"):
+                os.mkdir(ziploc + "failure_files/")
+            copyfile(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",
+                     ziploc + "failure_files/" + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv")
         if args.excel in ["T","t"]:
             df_all.to_excel(ziploc + each + each.replace(r"/","")  + ".xlsx",index=False)
         del df_all
