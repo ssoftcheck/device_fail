@@ -82,9 +82,13 @@ for item in tqdm(csvList):
             text = text.split(",")
             if text[0] == "NODEID":
                 node_id = text[1]
-            if text[0] == "CHASSISTYPE":
+            elif text[0] == "NETYPE":
+                netype = text[1]
+            elif text[0] == "ISNODECONTROLLER":
+                node_ctrl = text[1]
+            elif text[0] == "CHASSISTYPE":
                 chassis_type = text[1]
-            if text[0] == "SourceChassisId":
+            elif text[0] == "SourceChassisId":
                 chassis_id = text[1]
             # starting a chunk of data
             if line == "\n" or line == "":
@@ -98,7 +102,7 @@ for item in tqdm(csvList):
                     rows = []
             elif dataStart:
                 termination_point = text[0]
-                header = ["node_id","chassis_id","chassis_type","termination_point"] + text[1:]
+                header = ["node_id","chassis_id","chassis_type","netype","node_ctrl","termination_point"] + text[1:]
                 # deal with duplciate header names
                 headerDict = dict()
                 for h in range(len(header)):
@@ -111,7 +115,7 @@ for item in tqdm(csvList):
                 dataStart = False
                 dataRead = True
             elif dataRead:
-                rows.append(dict(zip(header,[node_id,chassis_id,chassis_type] + text)))
+                rows.append(dict(zip(header,[node_id,chassis_id,chassis_type,netype,node_ctrl] + text)))
 
 
 # delete tempDir
@@ -144,6 +148,8 @@ for each in tqdm(hDirs):
             df_all.loc[(df_all["termination_point"].apply(lambda x: re.search(targetTerminationPoint,x) is not None)) & 
                        (df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime),"fail"] = 1
             del df_all["time_lag"]
+		# remove duplciates
+        df_all = df_all.drop_duplicates()
         # write dataframe as pickle object
         df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
         df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)

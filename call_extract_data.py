@@ -8,10 +8,10 @@ import os
 
 if __name__ == "__main__":
     dataloc = '"C:/Users/AB58342/Documents/device failures/data/"'
-    dates = ["6/1/2017","21/3/2017"]
-    nodes = ["PHNXAZNEO11021004A","ATLNGAMAO50080604A"]
-    termPoints = ["",""]
-    fail = ["",""]
+    dates = ["21/3/2017"]
+    nodes = ["ATLNGAMAO50080604A"]
+    termPoints = ["11-A-5"]
+    fail = ["2017.3.21.21.18.26"]
     
     for _ in range(len(dates)):
         if termPoints[_] != "":
