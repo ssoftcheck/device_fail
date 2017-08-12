@@ -20,6 +20,7 @@ parser.add_argument("-d","--targetDate", help="date of failure as numeric %d/%m/
 parser.add_argument("-n","--targetNode", help="node of failure",required=True)
 parser.add_argument("-t","--targetTerminationPoint", help="termination point of failure",required=False)
 parser.add_argument("-f","--fail", help="failure datetime as numeric Year.Month.Day.Hour.Minute.Second",required=False)
+parser.add_argument("-r","--finished", help="failure resolution datetime as numeric Year.Month.Day.Hour.Minute.Second",required=False)
 parser.add_argument("-x","--excel",const="F",choices=["F","f","T","t"],nargs="?",help="T/F flag to write excel files also. Default False because it is slow")
 args = parser.parse_args()
 
@@ -35,24 +36,30 @@ if args.targetTerminationPoint is not None:
 else:
     targetTerminationPoint = None
 if args.fail is not None:
-    fail = args.fail # "2017.03.13.12.35.00"
+    fail = args.fail
     failureTime = dt.datetime.strptime(fail,"%Y.%m.%d.%H.%M.%S")
+    if args.finished is not None:
+        finishTime = args.finished
+        finishTime = dt.datetime.strptime(finishTime,"%Y.%m.%d.%H.%M.%S")
+    else:
+        finishTime = failureTime + dt.timedelta(hours=1)
 else:
     failureTime = None
+    finishTime = None
 
-dates = [targetDate + dt.timedelta(days=x) for x in range(-7,2)]
+dates = [targetDate + dt.timedelta(days=x) for x in range(-7,2) if targetDate + dt.timedelta(days=x) >= dt.datetime(2017,1,1)]
 # special case for target date between [2017.01.24,2017.02.15]
 if any(x >= dt.datetime(2017,1,24) and x <= dt.datetime(2017,2,15) for x in dates):
     dates.append(dt.datetime(2017,2,16))
 
-files = [str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip" for x in dates]
+files = ["^" + str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip$" for x in dates]
 files = "|".join(files)
 
 # TODO: connect to server and download files into ziploc, or get packages on server to run directly
 
 # find the exact file names for the relevant targetDate
 fileList = os.listdir(ziploc)
-targetFiles = [x.group(0) for x in [re.search(files,x,re.IGNORECASE)  for x in fileList] if x is not None]
+targetFiles = [y.group(0) for y in [re.search(files,x,re.IGNORECASE) for x in fileList] if y is not None]
 
 # unzip the files
 print("Extracting Relevant Data")
@@ -145,9 +152,16 @@ for each in tqdm(hDirs):
         if failureTime is not None:
             df_all["fail"] = 0
             df_all["time_lag"] = df_all[["termination_point","timestamp"]].groupby("termination_point").shift(1)
-            df_all.loc[(df_all["termination_point"].apply(lambda x: re.search(targetTerminationPoint,x) is not None)) & 
-                       (df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime),"fail"] = 1
-            del df_all["time_lag"]
+            df_all["time_jump"] = df_all[["termination_point","timestamp"]].groupby("termination_point").shift(-1)
+            term_point_ind = df_all["termination_point"].apply(lambda x: re.search(targetTerminationPoint,x) is not None)
+            df_all.loc[(term_point_ind) & 
+                       ((df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime) |
+                        (df_all["timestamp"] <= finishTime) & (df_all["time_jump"] > finishTime)),"fail"] = 1
+            start_end = df_all.loc[(term_point_ind) & (df_all["fail"] == 1),"timestamp"].values
+            if(len(start_end) > 0):
+                df_all.loc[(term_point_ind) & ((df_all["timestamp"] >= start_end[0]) & (df_all["timestamp"] <= start_end[1])),"fail"] = 1
+            
+            del df_all["time_lag"],df_all["time_jump"]
 		# remove duplciates
         df_all = df_all.drop_duplicates()
         # write dataframe as pickle object
