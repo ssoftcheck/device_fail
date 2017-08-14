@@ -157,10 +157,14 @@ for each in tqdm(hDirs):
             df_all.loc[(term_point_ind) & 
                        ((df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime) |
                         (df_all["timestamp"] <= finishTime) & (df_all["time_jump"] > finishTime)),"fail"] = 1
-            start_end = df_all.loc[(term_point_ind) & (df_all["fail"] == 1),"timestamp"].values
-            if(len(start_end) > 0):
-                df_all.loc[(term_point_ind) & ((df_all["timestamp"] >= start_end[0]) & (df_all["timestamp"] <= start_end[1])),"fail"] = 1
-            
+#            start_end = df_all.loc[(term_point_ind) & (df_all["fail"] == 1),"timestamp"].values
+            start_end = df_all.loc[df_all["fail"]==1,["termination_point","timestamp"]].groupby("termination_point")
+            start_end = start_end.aggregate([min,max])
+            start_end.columns
+            for sei in start_end.index:
+                df_all.loc[(df_all["termination_point"] == sei) & 
+                           (df_all["timestamp"] >= start_end.loc[sei,"timestamp"]["min"]) &
+                           (df_all["timestamp"] < start_end.loc[sei,"timestamp"]["max"]),"fail"] = 1
             del df_all["time_lag"],df_all["time_jump"]
 		# remove duplciates
         df_all = df_all.drop_duplicates()
