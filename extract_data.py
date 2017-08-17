@@ -21,6 +21,7 @@ parser.add_argument("-n","--targetNode", help="node of failure",required=True)
 parser.add_argument("-t","--targetTerminationPoint", help="termination point of failure",required=False)
 parser.add_argument("-f","--fail", help="failure datetime as numeric Year.Month.Day.Hour.Minute.Second",required=False)
 parser.add_argument("-r","--finished", help="failure resolution datetime as numeric Year.Month.Day.Hour.Minute.Second",required=False)
+parser.add_argument("-p","--pickle",const="F",choices=["F","f","T","t"],nargs="?",help="T/F flag to write pickled files also.")
 parser.add_argument("-x","--excel",const="F",choices=["F","f","T","t"],nargs="?",help="T/F flag to write excel files also. Default False because it is slow")
 args = parser.parse_args()
 
@@ -28,7 +29,7 @@ args = parser.parse_args()
 ziploc = args.ziploc 
 tempDir = ziploc + "temp/"
 
-targetDate = dt.datetime.strptime(args.targetDate,"%d/%m/%Y") 
+targetDate = dt.datetime.strptime(args.targetDate,"%m/%d/%Y") 
 targetNode = args.targetNode 
 if args.targetTerminationPoint is not None:
     targetTerminationPoint = args.targetTerminationPoint
@@ -42,7 +43,7 @@ if args.fail is not None:
         finishTime = args.finished
         finishTime = dt.datetime.strptime(finishTime,"%Y.%m.%d.%H.%M.%S")
     else:
-        finishTime = failureTime + dt.timedelta(hours=1)
+        finishTime = failureTime
 else:
     failureTime = None
     finishTime = None
@@ -157,10 +158,8 @@ for each in tqdm(hDirs):
             df_all.loc[(term_point_ind) & 
                        ((df_all["timestamp"] >= failureTime) & (df_all["time_lag"] < failureTime) |
                         (df_all["timestamp"] <= finishTime) & (df_all["time_jump"] > finishTime)),"fail"] = 1
-#            start_end = df_all.loc[(term_point_ind) & (df_all["fail"] == 1),"timestamp"].values
             start_end = df_all.loc[df_all["fail"]==1,["termination_point","timestamp"]].groupby("termination_point")
             start_end = start_end.aggregate([min,max])
-            start_end.columns
             for sei in start_end.index:
                 df_all.loc[(df_all["termination_point"] == sei) & 
                            (df_all["timestamp"] >= start_end.loc[sei,"timestamp"]["min"]) &
@@ -168,8 +167,7 @@ for each in tqdm(hDirs):
             del df_all["time_lag"],df_all["time_jump"]
 		# remove duplciates
         df_all = df_all.drop_duplicates()
-        # write dataframe as pickle object
-        df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")
+        # write to csv
         df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
         # copy to special folder for files that have events
         if df_all["fail"].sum() > 0:
@@ -177,6 +175,9 @@ for each in tqdm(hDirs):
                 os.mkdir(ziploc + "failure_files/")
             copyfile(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",
                      ziploc + "failure_files/" + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv")
+        # write dataframe as pickle object
+        if args.pickle in ["T","t"]:
+            df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")        
         if args.excel in ["T","t"]:
             df_all.to_excel(ziploc + each + each.replace(r"/","")  + ".xlsx",index=False)
         del df_all
