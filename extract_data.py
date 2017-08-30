@@ -149,7 +149,6 @@ for each in tqdm(hDirs):
             df_all = df_all.append(df)
     if len(csv) > 0:
         df_all = df_all.sort_values(by=["node_id","chassis_id","chassis_type","termination_point","timestamp"])
-        # TODO: add creation of failure column
         if failureTime is not None:
             df_all["fail"] = 0
             df_all["time_lag"] = df_all[["termination_point","timestamp"]].groupby("termination_point").shift(1)
@@ -164,8 +163,13 @@ for each in tqdm(hDirs):
                 df_all.loc[(df_all["termination_point"] == sei) & 
                            (df_all["timestamp"] >= start_end.loc[sei,"timestamp"]["min"]) &
                            (df_all["timestamp"] < start_end.loc[sei,"timestamp"]["max"]),"fail"] = 1
+                # add hours until failure
+                hours_until = start_end.loc[sei,"timestamp"]["min"] - df_all.loc[(df_all["termination_point"] == sei),"timestamp"]
+                hours_until = hours_until.apply(lambda x: x.total_seconds() / 60**2)
+                df_all.loc[(df_all["termination_point"] == sei),"hours_until"] = hours_until
+            
             del df_all["time_lag"],df_all["time_jump"]
-		# remove duplciates
+		   # remove duplciates
         df_all = df_all.drop_duplicates()
         # write to csv
         df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)

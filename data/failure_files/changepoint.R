@@ -68,9 +68,9 @@ for(i in names(files)) {
     if(label %in% names(tests)) {
       result = vector("list",length(tests[[label]]$vars))
       names(result) = tests[[label]]$vars
+      ds = files[[i]][selection,c(tests[[label]]$vars,"chassis_id","node_id","termination_point","fail","timestamp"),with=FALSE]
+      ds[,cp:=0]
       for(y in tests[[label]]$vars) {
-        ds = files[[i]][selection,c(y,"chassis_id","node_id","termination_point","fail","timestamp"),with=FALSE]
-        ds[,cp:= 0]
         ds[tests[[label]]$estimates[c(-1,-length(tests[[label]]$estimates))],cp := 1]
         failure = as.numeric(ds[fail==1][["timestamp"]])
         cp = as.numeric(ds[cp==1][["timestamp"]])
@@ -78,8 +78,9 @@ for(i in names(files)) {
         p = ggplot(ds) + aes_string(x="timestamp",y=y) + geom_line() + ylab(y) + xlab("Time") + ggtitle(paste(i,gsub(" ","\n",label),sep="\n")) +
           geom_vline(xintercept = failure,color="red",size=1.5) + geom_vline(xintercept = cp,color="blue",size=1)
 
-        result[[y]] = list(plot=p,data=ds)
+        result[[y]] = list(plot=p)
       }
+      result$data = ds
       return(result)
     }
     else
@@ -90,12 +91,16 @@ for(i in names(files)) {
 
   
   pdf(paste0(i,"_changepoint_plots.pdf"))
-  Map(function(x) Map(function(y) print(y$plot),x),plots)
+  Map(function(x) Map(function(y) {
+    if(!is.null(y))
+      print(y$plot)
+    },x),plots)
   dev.off()
-  
+
   # data output
-  out.data = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(function(x) Reduce(function(a,b) merge(a,b[,],by=c("timestamp","chassis_id","node_id","termination_point","fail","cp")),Map(function(y) y$data,x)),plots))
-  fwrite(out.data,paste0(i,"_changepoint_data.csv"))
+  # out.data = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(function(x) x$data,plots))
+  # if(class(out.data)[1] ==  "data.table")
+  #   fwrite(out.data,paste0(i,"_changepoint_data.csv"))
   
   pbar$tick()
 }
