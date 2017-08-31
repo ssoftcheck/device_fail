@@ -16,6 +16,7 @@ from shutil import copyfile
 
 parser = argparse.ArgumentParser(description="Script to exctract data")
 parser.add_argument("-l","--ziploc", help="location of zip files",required=True)
+parser.add_argument("-o","--outdir",help="directory for output folders",required=False)
 parser.add_argument("-d","--targetDate", help="date of failure as numeric %d/%m/%Y",required=True)
 parser.add_argument("-n","--targetNode", help="node of failure",required=True)
 parser.add_argument("-t","--targetTerminationPoint", help="termination point of failure",required=False)
@@ -28,14 +29,20 @@ args = parser.parse_args()
 # create regex for the dates based on the target date
 ziploc = args.ziploc 
 tempDir = ziploc + "temp/"
+if args.outdir is None:
+    outdir = re.search(r"(.+/)(.+/$)",ziploc).group(1)
+else:
+    outdir = args.outdir
 
 targetDate = dt.datetime.strptime(args.targetDate,"%m/%d/%Y") 
-targetNode = args.targetNode 
+targetNode = args.targetNode
+
 if args.targetTerminationPoint is not None:
     targetTerminationPoint = args.targetTerminationPoint
     targetTerminationPoint = r"^" + targetTerminationPoint.replace("-",r"\-")
 else:
     targetTerminationPoint = None
+    
 if args.fail is not None:
     fail = args.fail
     failureTime = dt.datetime.strptime(fail,"%Y.%m.%d.%H.%M.%S")
@@ -77,6 +84,7 @@ for tf in targetFiles:
 # get 15 min data
 csvList = os.listdir(tempDir)
 
+tracker = {}
 print("Processing Extracted csv Files")
 for item in tqdm(csvList):
     current = tempDir + item
@@ -104,9 +112,13 @@ for item in tqdm(csvList):
                 dataRead = False
                 # if the dataframe is ready to be written to csv
                 if len(rows) > 0:
-                    if not os.path.exists(ziploc + str(termination_point)):
-                        os.mkdir(ziploc + str(termination_point))
-                    pd.DataFrame(rows).to_csv(ziploc + str(termination_point) + "/" + item,index=False)
+                    if not os.path.exists(outdir + str(termination_point)):
+                        os.mkdir(outdir + str(termination_point))
+                    pd.DataFrame(rows).to_csv(outdir + "termination_point/" + str(termination_point) + "/" + item,index=False)
+                    if termination_point in tracker:
+                        tracker[termination_point].append(outdir + "termination_point/" + str(termination_point) + "/" + item)
+                    else:
+                        tracker[termination_point] = [outdir + "termination_point/" + str(termination_point) + "/" + item]
                     rows = []
             elif dataStart:
                 termination_point = text[0]
@@ -134,20 +146,18 @@ os.removedirs(tempDir)
 
 # assemble datasets
 print("Combining Processed csv Files by Termination Point")
-hDirs = [x.group(0) + "/" for x in [re.search(r"^h\_.+",x,re.IGNORECASE) for x in os.listdir(ziploc)] if x is not None]
+hDirs = tracker.keys()
 for each in tqdm(hDirs):
-    csv = [x.group(0) for x in [re.search(r".+\.csv$",x,re.IGNORECASE) for x in os.listdir(ziploc + each)] if x is not None]
-    csv = [x for x in csv if not x.startswith("h_")]
-    for _csv_ in csv:
-        df = pd.read_csv(ziploc + each + _csv_)
-        # now remove csv
-        os.remove(ziploc + each + _csv_)
+    for csv in tracker[each]:
+        df = pd.read_csv(csv)
+        # now remove csv+ 
+        os.remove(csv)
         df["timestamp"] = df["timestamp"].apply(lambda x: dt.datetime.strptime(x, "%Y.%m.%d.%H.%M.%S"))
         if "df_all" not in locals():
             df_all = df.copy()
         else:
             df_all = df_all.append(df)
-    if len(csv) > 0:
+    if len(tracker[each]) > 0:
         df_all = df_all.sort_values(by=["node_id","chassis_id","chassis_type","termination_point","timestamp"])
         if failureTime is not None:
             df_all["fail"] = 0
@@ -172,16 +182,16 @@ for each in tqdm(hDirs):
 		   # remove duplciates
         df_all = df_all.drop_duplicates()
         # write to csv
-        df_all.to_csv(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
+        df_all.to_csv(outdir + "termination_point/" + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
         # copy to special folder for files that have events
         if df_all["fail"].sum() > 0:
-            if not os.path.exists(ziploc + "failure_files/"):
-                os.mkdir(ziploc + "failure_files/")
-            copyfile(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",
-                     ziploc + "failure_files/" + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv")
+            if not os.path.exists(outdir + "failure_files/"):
+                os.mkdir(outdir + "failure_files/")
+            copyfile(outdir + "termination_point/" + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",
+                     outdir + "failure_files/" + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".csv")
         # write dataframe as pickle object
         if args.pickle in ["T","t"]:
-            df_all.to_pickle(ziploc + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")        
+            df_all.to_pickle(outdir + "termination_point/" + each + each.replace(r"/","")  + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")        
         if args.excel in ["T","t"]:
-            df_all.to_excel(ziploc + each + each.replace(r"/","")  + ".xlsx",index=False)
+            df_all.to_excel(outdir + "termination_point/" + each + each.replace(r"/","")  + ".xlsx",index=False)
         del df_all
