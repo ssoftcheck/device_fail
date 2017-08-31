@@ -1,0 +1,180 @@
+---
+title: "R Notebook"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(xgboost)
+library(foreach)
+library(iterators)
+library(progress)
+library(DMwR)
+library(ROCR)
+
+phi = function(a,p,cutoff=0.5) {
+  po = prediction(p,a)
+  perf = performance(po,measure = "phi")
+  point = which.min(abs(perf@x.values[[1]]-cutoff))[1]
+  return(perf@y.values[[1]][point])
+}
+auc = function(a,p) {
+  po = prediction(p,a)
+  perf = performance(po,measure = "auc")
+  return(perf@y.values[[1]])
+}
+accuracy = function(a,p,cutoff=0.5) {
+  po = prediction(p,a)
+  perf = performance(po,measure = "acc")
+  point = which.min(abs(perf@x.values[[1]]-cutoff))[1]
+  return(perf@y.values[[1]][point])
+}
+sensitivity = function(a,p,cutoff=0.5) {
+  po = prediction(p,a)
+  perf = performance(po,measure = "sens")
+  point = which.min(abs(perf@x.values[[1]]-cutoff))[1]
+  return(perf@y.values[[1]][point])
+}
+specificity = function(a,p,cutoff=0.5) {
+  po = prediction(p,a)
+  perf = performance(po,measure = "spec")
+  point = which.min(abs(perf@x.values[[1]]-cutoff))[1]
+  return(perf@y.values[[1]][point])
+}
+
+sense.xgb = function(preds, dtrain) {
+  labels = getinfo(dtrain, "label")
+  val = sensitivity(labels,preds,0.5)
+  return(list(metric = "sensitivity", value = val))
+}
+
+readData = function(x,filterTime=-1) {
+  # filter days to save time/space
+  d=fread(x)
+  d[,timestamp:=lubridate::ymd_hms(timestamp)]
+  d = d[order(termination_point,timestamp)]
+  if(filterTime > 0) {
+    failtime = min(d[fail==1,timestamp])
+    if(!is.na(failtime))
+      d = d[difftime(failtime,timestamp,units="hours") < filterTime]
+  }
+  return(d)
+}
+```
+
+```{r}
+# tp.folders = grep("h\\_",list.dirs("./data/"),value=TRUE)
+# for(each in tp.folders) {
+#   tempds = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,list.files(each,full.names = TRUE)))
+#   missing = tempds[,lapply(.SD,function(x) mean(is.na(x))),.SDcols=setdiff(names(tempds),"node_id"),by=node_id]
+#   fwrite(missing,paste0(each,"/",strsplit(each,"//")[[1]][2],"_missing.csv"))
+#   rm(missing,tempds)
+# }
+```
+
+
+```{r}
+files = grep("/h_OCHCTP\\_(?!changepoint).+csv$",list.files("./data/failure_files/",full.names=TRUE),value=TRUE,perl = TRUE)
+ds = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,files))
+ds[,fail:=factor(fail)]
+```
+
+```{r}
+print(ds)
+```
+
+```{r}
+nodes = ds[,unique(node_id)]
+vars = c(
+"BerPreFecAve",
+"BerPreFecMax",
+"BerPreFecMin",
+"ChanOchChromaticDispersionAve",
+"ChanOchChromaticDispersionMax",
+"ChanOchChromaticDispersionMin",
+"ChanOchLBCAve",
+"ChanOchLBCMax",
+"ChanOchLBCMin",
+"ChanOchOptAve",
+"ChanOchOptMax",
+"ChanOchOptMin",
+"PmType",
+"PmdAve",
+"PmdMax",
+"PmdMin",
+"Qave",
+"Qmax",
+"Qmin",
+"SoPmdAve",
+"SoPmdMax",
+"SoPmdMin"
+)
+var.formula = as.formula(paste0("fail~",paste(vars,collapse="+")))
+```
+
+```{r}
+# lag variables
+interval = 4 # 1 hour
+lags = 24 # 1 day
+l = seq(interval,lags,interval)
+for(v in vars) {
+  newvars = paste0(v,"_lag",l)
+  ds[,(newvars) := shift(get(v),l),by=.(node_id,termination_point)]
+  var.formula = update(var.formula,paste(c("~.",newvars),collapse="+"))
+  vars = union(vars,newvars)
+}
+```
+
+
+```{r}
+params = expand.grid(objective="binary:logistic",subsample=c(0.5,0.7,0.9),max.depth=c(2,4,8,10),eta=c(0.001,0.01,0.1),min.child.weight=c(1,2,4),colsample.bytree=c(0.5,0.6,0.7,0.8),stringsAsFactors = FALSE,KEEP.OUT.ATTRS = FALSE)
+params = as.data.table(params)
+
+file.create("perf_console.txt")
+
+for(n in nodes[2:3]) {
+  trainset = which(ds[,node_id] != n)
+  testset = which(ds[,node_id] == n)
+  
+  train = SMOTE(var.formula,data=ds[trainset,c("fail",vars),with=FALSE],perc.over = 5000,perc.under = 100)
+  print(train[,.N,fail])
+  
+  sink(file = "perf_console.txt",append = TRUE)
+  cat(n,"\n")
+  cat("old event rate: ",ds[trainset,mean(as.integer(fail)-1)],"\n")
+  cat("new event rate: ",train[,mean(as.integer(fail)-1)],"\n")
+  sink()
+
+  train = xgb.DMatrix(as.matrix(train[,vars,with=FALSE]),label = as.integer(train[,fail])-1)
+  test = xgb.DMatrix(as.matrix(ds[testset,vars,with=FALSE]),label = as.integer(ds[testset,fail])-1)
+  
+  pbar = progress_bar$new(format = "(:spin) [:bar] :percent", total = nrow(params), clear = FALSE)
+  result = foreach(pnow=iter(params,by="row"),.combine="rbind",.multicombine=TRUE) %do% {
+    fit = xgb.train(data=train,nrounds=500,save_period=NULL,params=as.list(pnow),verbose=0)
+    pred = predict(fit,test)
+    perf = lapply(seq(0.1,0.9,0.1),function(cut) lapply(list(data.table(a=ds[testset,fail],p=pred)),function(x) data.table(node=n,cutoff=cut,auc=auc(x$a,x$p),phi=phi(x$a,x$p,cut),acc=accuracy(x$a,x$p,cut),sens=sensitivity(x$a,x$p,cut),spec=specificity(x$a,x$p,cut)))[[1]])
+    perf = rbindlist(perf)
+    pbar$tick()
+    return(perf)
+  }
+  # sink(file = "perf_console.txt",append = TRUE)
+  # print(as.data.frame(result))
+  # sink()
+    
+  if("perf.final" %in% ls())
+    perf.final = rbind(perf.final,result)
+  else
+    perf.final = result
+}
+save(perf.final,file="perf.final")
+```
+
+```{r}
+perf.summary = cbind(params[rep(1:nrow(params),times=length(nodes),each=9)],perf.final)
+perf.summary[,balacc:= (sens+spec)/2]
+perf.summary = perf.summary[,lapply(.SD,mean),by=c(names(params),"cutoff"),.SDcols=setdiff(names(perf.summary),c("node","cutoff","objective"))]
+```
+
+
