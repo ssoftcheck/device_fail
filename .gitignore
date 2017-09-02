@@ -10,3 +10,4 @@
 *.png
 *.pickle
 *.Rproj*
+.Rproj.user

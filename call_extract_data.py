@@ -22,14 +22,16 @@ if __name__ == "__main__":
         else:
             tp = ""
         if _.fail_start != "":
-            f = " --fail " + _.fail_start
+            f = " --fail \"" + _.fail_start + "\""
         else:
             f = ""
         if _.fail_end != "":
-            fin = " --finished " + _.fail_end
+            fin = " --finished \"" + _.fail_end + "\""
         else:
             fin = ""
             
         print("Starting Event " + str(tracker) + " of " + str(infile.shape[0]))
-        os.system("python extract_data.py" + " --ziploc \"" + _.location + "\" --targetDate " + _.date + " --targetNode " + _.node + tp + f + fin)
+        call = "python extract_data.py" + " --ziploc \"" + _.location + "\" --outdir \"" + _.outdir + "\" --alarmloc \"" + _ .alarm + "\" --targetDate " + _.date + " --targetNode " + _.node + tp + f + fin
+        print("\n" + call + "\n")
+        os.system(call)
         tracker += 1
