@@ -12,7 +12,7 @@ library(xgboost)
 library(foreach)
 library(doSNOW)
 library(iterators)
-library(progress)
+library(pdp)
 library(tcltk)
 library(DMwR)
 library(ROCR)
@@ -152,8 +152,7 @@ params2 = as.data.table(params2)
 
 cl = makeCluster(4)
 registerDoSNOW(cl)
-# opts = list(progress=function(incr) setTkProgressBar(pb,value = incr,label=sprintf("%3.2f%%",100*incr/length(nodes))))
-pb = tkProgressBar(min = 0,max=max(ds$fold),title ="Progress Fold 1",label = "0%")
+opts = list(progress=function(incr) setTkProgressBar(pb,value = incr,label=sprintf("%3.2f%%",100*incr/nrow(params))))
 
 perf.final = foreach(cvf = min(ds$fold):max(ds$fold),.combine="rbind",.multicombine=TRUE) %do% {
   trainset = which(ds[,fold] != cvf)
@@ -161,7 +160,6 @@ perf.final = foreach(cvf = min(ds$fold):max(ds$fold),.combine="rbind",.multicomb
   
   train = SMOTE(var.formula,data=ds[trainset,c("fail",vars),with=FALSE],perc.over = 5000,perc.under = 100)
   
-  # sink(paste0("progress_",gsub("(.+)@.+","\\1",n),".txt"),append=FALSE)
   cat("Fold ",cvf,"\n")
   cat("old event rate: ",ds[trainset,mean(as.integer(fail)-1)],"\n")
   cat("new event rate: ",train[,mean(as.integer(fail)-1)],"\n")
@@ -172,7 +170,8 @@ perf.final = foreach(cvf = min(ds$fold):max(ds$fold),.combine="rbind",.multicomb
   xgb.DMatrix.save(test,"test.matrix")
   rm(train,test)
   
-  result = foreach(pnow=iter(params,by="row"),.combine="rbind",.packages=c("xgboost","data.table","ROCR"),.multicombine=TRUE) %dopar% {
+  pb = tkProgressBar(min = 0,max=max(ds$fold),title =paste("Progress Fold",cvf),label = "0%")
+  result = foreach(pnow=iter(params,by="row"),.combine="rbind",.packages=c("xgboost","data.table","ROCR"),.multicombine=TRUE,.options.snow=opts) %dopar% {
     fit = xgb.train(data=xgb.DMatrix("train.matrix"),nrounds=1000,save_period=NULL,params=as.list(pnow),verbose=0)
     test = xgb.DMatrix("test.matrix")
     perf = lapply(seq(100,1000,100),function(ntree) {
@@ -185,46 +184,115 @@ perf.final = foreach(cvf = min(ds$fold):max(ds$fold),.combine="rbind",.multicomb
     return(rbindlist(perf))
   }
   file.remove(c("train.matrix","test.matrix"))
-  setTkProgressBar(pb,value=cvf,title = paste("Progress Fold",cvf+1),label=sprintf("%3.2f%%",100*cvf/max(ds$fold)))
+  close(pb)
   return(result)
 }
 stopCluster(cl)
-close(pb)
-# save(perf.final,file="perf.final")
 ```
 
 ```{r}
-perf.summary = cbind(params[rep(1:nrow(params),times=length(nodes),each=9)],perf.final)
+perf.summary = cbind(params[rep(1:nrow(params),times=max(ds$fold),each=9*10)],perf.final)
 perf.summary[,balacc:= (sens+spec)/2]
-perf.summary = perf.summary[,lapply(.SD,mean),by=c(names(params),"cutoff"),.SDcols=c("auc","phi","acc","sens","spec","balacc")]
+perf.summary = perf.summary[,lapply(.SD,mean),by=c(names(params),"ntree","cutoff"),.SDcols=c("auc","phi","acc","sens","spec","balacc")]
+save(perf.summary,file="perf.summary")
 ```
 
 ```{r}
-prog = Reduce(c,Map(readLines,grep("progress\\_",list.files(),value = TRUE)))
-prog = regmatches(prog,regexec("(.+)@.+|Train-\\w+:([\\d\\.]+)\tTest-\\w+:([\\d\\.]+)",prog,perl=TRUE))
-prog = Reduce(rbind,Map(function(x) c(Node=x[2],Train=x[3],Test=x[4]),prog))
-prog = as.data.table(prog)
-prog[,c("Train","Test") := lapply(.SD,as.numeric),.SDcols=c("Train","Test")]
-prog = prog[apply(prog,1,function(x) !all(is.na(x)))]
-# extend node name
-ind = which(prog$Node != "")
-ind = cbind(ind,c(ind[-1]-1,nrow(prog)))
-for(i in 1:nrow(ind)) {
-  prog[ind[i,1]:ind[i,2],Node := prog[ind[i,1],Node]]
+plotvars = c("subsample","max.depth","eta","min.child.weight","colsample.bytree","ntree","cutoff")
+# plotvars = combn(plotvars,2)
+for(i in plotvars) {
+  plt = ggplot() + aes(x=factor(perf.summary[[i]]),y=perf.summary$balacc) + geom_boxplot() + xlab(i) + ylab("balanced accuracy")
+  print(plt)
+  rm(plt)
 }
-prog = prog[!(is.na(Train) & is.na(Test))]
-prog[,Step:=1:.N,by=Node]
 ```
 
 ```{r}
-png("weird_auc.png",width = 8,height = 6,units = "in",res = 200)
-ggplot(melt(prog,id.vars=c("Node","Step"))) + aes(x=Step,y=value,color=variable) + geom_line(size=1.5) + facet_wrap(~Node,ncol=2) + ylab("AUC") + scale_color_discrete(name="Data")
+set.seed(5)
+train = SMOTE(var.formula,data=ds[,c("fail",vars),with=FALSE],perc.over = 5000,perc.under = 100)
+save(train,file="full_train.rdata")
+train = xgb.DMatrix(as.matrix(train[,vars,with=FALSE]),label = as.integer(train[,fail])-1)
+full.fit = xgb.train(data=train,nrounds=1000,save_period=NULL,params=list(objective="binary:logistic",
+                                                                          subsample=0.5,
+                                                                          max.depth=8,
+                                                                          eta=0.01,
+                                                                          min.child.weight=1,
+                                                                          colsample.bytree=0.5))
+xgb.save(full.fit,"full_fit.xgb")
+ds[,pred := predict(full.fit,xgb.DMatrix(as.matrix(ds[,vars,with=FALSE])))]
+```
+
+```{r}
+full.imp = xgb.importance(feature_names = vars,model=full.fit)
+xgb.ggplot.importance(importance_matrix = full.imp,top_n = 10)
+```
+
+```{r}
+top = full.imp[1:15,Feature]
+temp = melt(ds,id.vars="fail",measure.vars = top)[!is.na(value)]
+limits = temp[,.(low=quantile(value,0.01),high=quantile(value,0.99)),by="variable"]
+temp = merge(temp,limits,by="variable",all.x = TRUE,all.y=FALSE)[value > low & value < high]
+for(i in unique(temp$variable))
+  print(ggplot(temp[variable==i]) + aes(x=value,fill=fail) + geom_density(alpha=0.8) + ggtitle(i))
+rm(temp)
+```
+
+```{r}
+vp = train[,lapply(.SD,function(x) quantile(x,c(0.02,seq(0.1,0.9,0.1),0.98),na.rm=TRUE)),.SDcols=top]
+
+opts = list(progress=function(incr) setTkProgressBar(pb,value = incr,label=sprintf("%3.2f%%",100*incr/length(top))))
+pb = tkProgressBar(min = 0,max=length(top),title = "Progress",label = "0%")
+
+cl = makeCluster(4)
+registerDoSNOW(cl)
+pd = foreach(x = names(vp),.packages=c("data.table","xgboost","pdp"),.options.snow=opts) %dopar% {
+  # setTkProgressBar(pb,value=which(names(vp)==x),label = sprintf("%3.2f%%",100*which(names(vp)==x)/ncol(vp)))
+  partial(object = full.fit,pred.var=x,pred.grid = vp[,x,with=FALSE],chull=TRUE,prob=TRUE,train=train[,setdiff(names(train),"fail"),with=FALSE],plot=FALSE)
+}
+names(pd) = top
+stopCluster(cl)
+close(pb)
+```
+
+
+```{r}
+pdf("h_OCHCTP top 15 parital dependence plots.pdf")
+for(i in names(pd))
+  print(ggplot(pd[[i]]) + aes_string(x=i,y="yhat") + geom_point() + geom_line() + geom_smooth() + ylab("Failure Probability"))
+dev.off()
+```
+
+```{r}
+hasfail = ds[fail==1,.(start=min(timestamp)),by=.(node_id,termination_point)]
+pdf("h_OCHCTP failure prediction over time.pdf")
+for(i in 1:nrow(hasfail)) {
+  plt = ggplot(ds[termination_point==hasfail[i,termination_point] & node_id==hasfail[i,node_id] & 
+              difftime(hasfail[i,start],timestamp,units="hours") <= 24 & difftime(hasfail[i,start],timestamp,units="hours") >= -4]) + 
+    aes(x=timestamp,y=pred) + geom_point() + geom_line() + geom_vline(xintercept=as.numeric(hasfail[i,start]),lty=2,color="red",size=2) + geom_smooth(method="loess") + 
+    scale_y_continuous(limits = c(0,1)) +
+    xlab("Time") + ylab("Failure Probability") + ggtitle(paste0("Node ",gsub("(.+)@(.+)","\\1",hasfail[i,node_id]),"\n","Termination Point ",hasfail[i,termination_point]))
+  print(plt)
+}
 dev.off()
 ```
 
 
 ```{r}
-ggplot(melt(prog,id.vars=c("Node","Step"))) + aes(x=Step,y=value,color=variable) + geom_line(size=1.5) + facet_wrap(~Node,ncol=2) +
-  ylab("LogLoss") + scale_color_discrete(name="Data")
+# prog = Reduce(c,Map(readLines,grep("progress\\_",list.files(),value = TRUE)))
+# prog = regmatches(prog,regexec("(.+)@.+|Train-\\w+:([\\d\\.]+)\tTest-\\w+:([\\d\\.]+)",prog,perl=TRUE))
+# prog = Reduce(rbind,Map(function(x) c(Node=x[2],Train=x[3],Test=x[4]),prog))
+# prog = as.data.table(prog)
+# prog[,c("Train","Test") := lapply(.SD,as.numeric),.SDcols=c("Train","Test")]
+# prog = prog[apply(prog,1,function(x) !all(is.na(x)))]
+# # extend node name
+# ind = which(prog$Node != "")
+# ind = cbind(ind,c(ind[-1]-1,nrow(prog)))
+# for(i in 1:nrow(ind)) {
+#   prog[ind[i,1]:ind[i,2],Node := prog[ind[i,1],Node]]
+# }
+# prog = prog[!(is.na(Train) & is.na(Test))]
+# prog[,Step:=1:.N,by=Node]
 ```
+
+
 
