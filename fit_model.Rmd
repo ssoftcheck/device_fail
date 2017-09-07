@@ -76,6 +76,8 @@ readData = function(x,filterTime=-1) {
 ```
 
 ```{r}
+# for summarizing missing fields
+
 # tp.folders = grep("h\\_",list.dirs("./data/"),value=TRUE)
 # for(each in tp.folders) {
 #   tempds = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,list.files(each,full.names = TRUE)))
@@ -87,6 +89,7 @@ readData = function(x,filterTime=-1) {
 
 
 ```{r}
+# read data, replace h_OCHCTP with a whatever terminatin point you like
 files = grep("/h_OCHCTP\\_(?!changepoint).+csv$",list.files("C:/device failures/failure_files",full.names=TRUE),value=TRUE,perl = TRUE)
 ds = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,files))
 ds[,fail:=factor(fail)]
@@ -94,6 +97,7 @@ ds[,fail:=factor(fail)]
 
 
 ```{r}
+# specify predictor variables
 nodes = ds[,unique(node_id)]
 vars = c(
 "BerPreFecAve",
@@ -123,7 +127,7 @@ var.formula = as.formula(paste0("fail~",paste(vars,collapse="+")))
 ```
 
 ```{r}
-# lag variables
+# create lag variables and add to predictor set
 interval = 4 # 1 hour
 lags = 24 # 1 day
 l = seq(interval,lags,interval)
@@ -144,11 +148,9 @@ ds[,mean(as.integer(fail)-1),fold][order(fold)]
 
 
 ```{r}
+# evaluate parameters with cross validation
 params = expand.grid(objective="binary:logistic",subsample=c(0.5,0.7,0.9),max.depth=c(2,4,8),eta=c(0.001,0.01),min.child.weight=c(1,2,3),colsample.bytree=c(0.5,0.7,0.9),stringsAsFactors = FALSE,KEEP.OUT.ATTRS = FALSE)
 params = as.data.table(params)
-
-params2 = expand.grid(objective="binary:logistic",subsample=0.7,max.depth=2,eta=0.001,min.child.weight=1,colsample.bytree=0.8,stringsAsFactors = FALSE,KEEP.OUT.ATTRS = FALSE)
-params2 = as.data.table(params2)
 
 cl = makeCluster(4)
 registerDoSNOW(cl)
@@ -191,13 +193,15 @@ stopCluster(cl)
 ```
 
 ```{r}
+# summarize results across validation folds
 perf.summary = cbind(params[rep(1:nrow(params),times=max(ds$fold),each=9*10)],perf.final)
 perf.summary[,balacc:= (sens+spec)/2]
 perf.summary = perf.summary[,lapply(.SD,mean),by=c(names(params),"ntree","cutoff"),.SDcols=c("auc","phi","acc","sens","spec","balacc")]
-save(perf.summary,file="perf.summary")
+save(perf.final,perf.summary,file="perf.summary.rdata")
 ```
 
 ```{r}
+# univariate plots of performance metric across parameters, change y value to metric of choice
 plotvars = c("subsample","max.depth","eta","min.child.weight","colsample.bytree","ntree","cutoff")
 # plotvars = combn(plotvars,2)
 for(i in plotvars) {
@@ -208,6 +212,7 @@ for(i in plotvars) {
 ```
 
 ```{r}
+# train final model. save training data and final model fit
 set.seed(5)
 train = SMOTE(var.formula,data=ds[,c("fail",vars),with=FALSE],perc.over = 5000,perc.under = 100)
 save(train,file="full_train.rdata")
@@ -223,11 +228,13 @@ ds[,pred := predict(full.fit,xgb.DMatrix(as.matrix(ds[,vars,with=FALSE])))]
 ```
 
 ```{r}
+# top N variable importance 
 full.imp = xgb.importance(feature_names = vars,model=full.fit)
 xgb.ggplot.importance(importance_matrix = full.imp,top_n = 10)
 ```
 
 ```{r}
+# density plots of top 1:N features
 top = full.imp[1:15,Feature]
 temp = melt(ds,id.vars="fail",measure.vars = top)[!is.na(value)]
 limits = temp[,.(low=quantile(value,0.01),high=quantile(value,0.99)),by="variable"]
@@ -238,6 +245,7 @@ rm(temp)
 ```
 
 ```{r}
+# create partial dependence 
 vp = train[,lapply(.SD,function(x) quantile(x,c(0.02,seq(0.1,0.9,0.1),0.98),na.rm=TRUE)),.SDcols=top]
 
 opts = list(progress=function(incr) setTkProgressBar(pb,value = incr,label=sprintf("%3.2f%%",100*incr/length(top))))
@@ -256,6 +264,7 @@ close(pb)
 
 
 ```{r}
+# plot partial dependence
 pdf("h_OCHCTP top 15 parital dependence plots.pdf")
 for(i in names(pd))
   print(ggplot(pd[[i]]) + aes_string(x=i,y="yhat") + geom_point() + geom_line() + geom_smooth() + ylab("Failure Probability"))
@@ -263,6 +272,7 @@ dev.off()
 ```
 
 ```{r}
+# plot predicted probabilities over time leading to failure
 hasfail = ds[fail==1,.(start=min(timestamp)),by=.(node_id,termination_point)]
 pdf("h_OCHCTP failure prediction over time.pdf")
 for(i in 1:nrow(hasfail)) {
@@ -278,6 +288,8 @@ dev.off()
 
 
 ```{r}
+# code to read console output that was sent to file (via sink funciton) of xgb.train function's watchlist data sets, i.e. use to track a metric from a watchlist over iterations of fitting
+
 # prog = Reduce(c,Map(readLines,grep("progress\\_",list.files(),value = TRUE)))
 # prog = regmatches(prog,regexec("(.+)@.+|Train-\\w+:([\\d\\.]+)\tTest-\\w+:([\\d\\.]+)",prog,perl=TRUE))
 # prog = Reduce(rbind,Map(function(x) c(Node=x[2],Train=x[3],Test=x[4]),prog))
