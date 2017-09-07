@@ -3,7 +3,7 @@ import os
 import re
 
 nodes = set()
-path = "./raw_pm/"
+path = "c:/device failures/raw_pm/"
 zips = [path + i for i in os.listdir(path) if i.endswith(".zip")]
 
 for z in zips:
@@ -12,7 +12,7 @@ for z in zips:
     nodes = nodes.union(nodenames)
     cur.close()
 
-out = open("node_list.txt","w") 
+out = open("c:/device failures/node_list.txt","w") 
 for each in sorted(nodes):
     out.write(each + "\n")
 out.close()
