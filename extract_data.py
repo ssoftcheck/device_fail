@@ -182,7 +182,7 @@ for fn in tqdm(file_names):
     
     # Data starts on row 10
     current = re.search(r"(.+).tar.gz",fn).group(1)
-    elog = pd.read_csv(tempAlarm + current,sep="\t",skiprows=9,index_col=False)
+    elog = pd.read_csv(tempAlarm + current,sep="\t",skiprows=9,index_col=False,error_bad_lines=False)
     elog = elog.loc[elog["Event Sub Type"] == "ALARM"]
     	
     #elog = pd.read_csv(path + fname, sep='\t', skiprows=9)
