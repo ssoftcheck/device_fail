@@ -89,7 +89,7 @@ readData = function(x,filterTime=-1) {
 
 
 ```{r}
-# read data, replace h_OCHCTP with a whatever terminatin point you like
+# read data, replace h_OCHCTP with a whatever termination point you like
 files = grep("/h_OCHCTP\\_(?!changepoint).+csv$",list.files("C:/device failures/failure_files",full.names=TRUE),value=TRUE,perl = TRUE)
 ds = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,files))
 ds[,fail:=factor(fail)]
@@ -121,7 +121,8 @@ vars = c(
 "Qmin",
 "SoPmdAve",
 "SoPmdMax",
-"SoPmdMin"
+"SoPmdMin",
+"alarms"
 )
 var.formula = as.formula(paste0("fail~",paste(vars,collapse="+")))
 ```
