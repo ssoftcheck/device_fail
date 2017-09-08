@@ -243,7 +243,7 @@ for each in tqdm(hDirs):
                 df_all.loc[(df_all["termination_point"] == sei),"hours_until"] = hours_until
             
             del df_all["time_lag"],df_all["time_jump"]
-		   # merge alarm count
+        # merge alarm count
         df_all = df_all.merge(elog_all,how="left",left_on=["node_id","termination_point","timestamp"],right_on=["node_id","termination_point","merge_time_up"])
         df_all.loc[pd.isnull(df_all["alarms"]),"alarms"] = 0
         # remove duplciates
@@ -253,11 +253,12 @@ for each in tqdm(hDirs):
             os.mkdir(outdir + "termination_point/" + each + "/")
         df_all.to_csv(outdir + "termination_point/" + each + "/" + each + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",index=False)
         # copy to special folder for files that have events
-        if df_all["fail"].sum() > 0:
-            if not os.path.exists(outdir + "failure_files/"):
-                os.mkdir(outdir + "failure_files/")
-            shutil.copyfile(outdir + "termination_point/" + each + "/" + each.replace(r"/","") + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",
-                     outdir + "failure_files/" + each + "_" + targetNode + "_" + str(targetDate.date()) + ".csv")
+        if failureTime is not None:
+            if df_all["fail"].sum() > 0:
+                if not os.path.exists(outdir + "failure_files/"):
+                    os.mkdir(outdir + "failure_files/")
+                shutil.copyfile(outdir + "termination_point/" + each + "/" + each.replace(r"/","") + "_" + targetNode + "_" + str(targetDate.date()) + ".csv",
+                         outdir + "failure_files/" + each + "_" + targetNode + "_" + str(targetDate.date()) + ".csv")
         # write dataframe as pickle object
         if args.pickle in ["T","t"]:
             df_all.to_pickle(outdir + "termination_point/" + each + "/" + each + "_" + targetNode + "_" + str(targetDate.date()) + ".pickle")        

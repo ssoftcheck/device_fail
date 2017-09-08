@@ -13,19 +13,19 @@ if __name__ == "__main__":
     parser.add_argument("-i","--input", help="Input csv",required=True)
     args = parser.parse_args()
     
-    infile = pd.read_csv(args.input)
+    infile = pd.read_csv(args.input,)
     
     tracker = 1    
     for _ in infile.itertuples():
-        if _.fail_point != "":
+        if not pd.isnull(_.fail_point):
             tp = " --targetTerminationPoint " + _.fail_point
         else:
             tp = ""
-        if _.fail_start != "":
+        if not pd.isnull(_.fail_start):
             f = " --fail \"" + _.fail_start + "\""
         else:
             f = ""
-        if _.fail_end != "":
+        if not pd.isnull(_.fail_end):
             fin = " --finished \"" + _.fail_end + "\""
         else:
             fin = ""
