@@ -215,10 +215,10 @@ for(i in plotvars) {
 ```{r}
 # train final model. save training data and final model fit
 set.seed(5)
-train = SMOTE(var.formula,data=ds[,c("fail",vars),with=FALSE],perc.over = 5000,perc.under = 100)
-save(train,file="full_train.rdata")
-train = xgb.DMatrix(as.matrix(train[,vars,with=FALSE]),label = as.integer(train[,fail])-1)
-full.fit = xgb.train(data=train,nrounds=1000,save_period=NULL,params=list(objective="binary:logistic",
+train.full = SMOTE(var.formula,data=ds[,c("fail",vars),with=FALSE],perc.over = 5000,perc.under = 100)
+save(train.full,file="full_train.rdata")
+train.full = xgb.DMatrix(as.matrix(train[,vars,with=FALSE]),label = as.integer(train[,fail])-1)
+full.fit = xgb.train(data=train.full,nrounds=1000,save_period=NULL,params=list(objective="binary:logistic",
                                                                           subsample=0.5,
                                                                           max.depth=8,
                                                                           eta=0.01,
@@ -246,7 +246,8 @@ rm(temp)
 ```
 
 ```{r}
-# create partial dependence 
+# create partial dependence
+load(file="full_train.rdata")
 vp = train[,lapply(.SD,function(x) quantile(x,c(0.02,seq(0.1,0.9,0.1),0.98),na.rm=TRUE)),.SDcols=top]
 
 opts = list(progress=function(incr) setTkProgressBar(pb,value = incr,label=sprintf("%3.2f%%",100*incr/length(top))))
@@ -255,7 +256,6 @@ pb = tkProgressBar(min = 0,max=length(top),title = "Progress",label = "0%")
 cl = makeCluster(4)
 registerDoSNOW(cl)
 pd = foreach(x = names(vp),.packages=c("data.table","xgboost","pdp"),.options.snow=opts) %dopar% {
-  # setTkProgressBar(pb,value=which(names(vp)==x),label = sprintf("%3.2f%%",100*which(names(vp)==x)/ncol(vp)))
   partial(object = full.fit,pred.var=x,pred.grid = vp[,x,with=FALSE],chull=TRUE,prob=TRUE,train=train[,setdiff(names(train),"fail"),with=FALSE],plot=FALSE)
 }
 names(pd) = top
