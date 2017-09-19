@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 """
-Created on Thu Aug  3 14:34:42 2017
+@author: Sean Softcheck
 
-@author: AB58342
+Not mean to be used directly, use call_extract_data.py
 """
 
 import pandas as pd
@@ -82,8 +81,6 @@ if any(x >= dt.datetime(2017,1,24) and x <= dt.datetime(2017,2,15) for x in date
 
 files = ["^" + str(x.day) + r"\_" + str(x.month) + r"\_" + str(x.year) + r".+zip$" for x in dates]
 files = "|".join(files)
-
-# TODO: connect to server and download files into ziploc, or get packages on server to run directly
 
 # find the exact file names for the relevant targetDate
 fileList = os.listdir(ziploc)
