@@ -1,7 +1,7 @@
 source("setup.R")
 
 # read data
-files = grep(paste0("/",termination_point,"\\_(?!changepoint).+csv$"),list.files(file_location,full.names=TRUE),value=TRUE,perl = TRUE)
+files = grep(termination_point,list.files(file_location,full.names=TRUE),value=TRUE,perl = TRUE)
 ds = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,files))
 ds[,fail:=factor(fail)]
 nodes = ds[,unique(node_id)]
@@ -71,7 +71,7 @@ perf.summary = cbind(params[rep(1:nrow(params),times=max(ds$fold),each=9*n_folds
 perf.summary[,balacc:= (sens+spec)/2]
 perf.summary = perf.summary[,lapply(.SD,mean),by=c(names(params),"ntree","cutoff"),.SDcols=c("auc","phi","acc","sens","spec","balacc")]
 save(perf.final,perf.summary,file=paste0(termination_point,".perf.summary.rdata"))
-fwrite(perf.final,paste0(termination_point,"_cross_validation_performance"))
+fwrite(perf.final,paste0(termination_point,"_cross_validation_performance.csv"))
 
 best.params = perf.summary[get(metric)==max(get(metric)),.(objective,subsample,max.depth,eta,min.child.weight,colsample.bytree)][1]
 best.ntree = perf.summary[get(metric)==max(get(metric))][1,ntree]
@@ -86,6 +86,8 @@ full.fit = xgb.train(data=train.full,nrounds=best.ntree,save_period=NULL,params=
 xgb.save(full.fit,paste0(termination_point,"_full_fit.xgb"))
 ds[,pred := predict(full.fit,xgb.DMatrix(as.matrix(ds[,vars,with=FALSE])))]
 ds[,pred_class := ifelse(pred > best.cutoff,1,0)]
+# write file
+fwrite(ds[,.(chassis_id,chassis_type,netype,node_ctrl,node_id,termination_point,timestamp,fail,hours_until,pred,pred_class)],paste0(termination_point,"_predictions.csv"))
 
 
 # top N variable importance 
@@ -112,7 +114,7 @@ stopCluster(cl)
 close(pb)
 
 # plot partial dependence
-pdf(paste(termination_point,"top 15 parital dependence plots.pdf"))
+pdf(paste0(termination_point,"_top_15_parital_dependence_plots.pdf"))
 for(i in names(pd))
   print(ggplot(pd[[i]]) + aes_string(x=i,y="yhat") + geom_point() + geom_line() + geom_smooth() + ylab("Failure Probability"))
 dev.off()
@@ -120,7 +122,7 @@ dev.off()
 
 # plot predicted probabilities over time leading to failure
 hasfail = ds[fail==1,.(start=min(timestamp)),by=.(node_id,termination_point)]
-pdf(paste(termination_point,"failure prediction over time.pdf"))
+pdf(paste0(termination_point,"_failure_prediction_over_time.pdf"))
 for(i in 1:nrow(hasfail)) {
   plt = ggplot(ds[termination_point==hasfail[i,termination_point] & node_id==hasfail[i,node_id] & 
                     difftime(hasfail[i,start],timestamp,units="hours") <= 24 & difftime(hasfail[i,start],timestamp,units="hours") >= -4]) + 
