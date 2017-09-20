@@ -1,9 +1,42 @@
+termination_point = "h_OCHCTP"
+file_location = "C:/"
+# choose one of auc,phi,acc,sens,spec,balacc
+metric = "balacc"
+n_folds = 10
+
+# specify predictor variables
+vars = c(
+  "BerPreFecAve",
+  "BerPreFecMax",
+  "BerPreFecMin",
+  "ChanOchChromaticDispersionAve",
+  "ChanOchChromaticDispersionMax",
+  "ChanOchChromaticDispersionMin",
+  "ChanOchLBCAve",
+  "ChanOchLBCMax",
+  "ChanOchLBCMin",
+  "ChanOchOptAve",
+  "ChanOchOptMax",
+  "ChanOchOptMin",
+  "PmType",
+  "PmdAve",
+  "PmdMax",
+  "PmdMin",
+  "Qave",
+  "Qmax",
+  "Qmin",
+  "SoPmdAve",
+  "SoPmdMax",
+  "SoPmdMin",
+  "alarms"
+)
+var.formula = as.formula(paste0("fail~",paste(vars,collapse="+")))
+
 library(data.table)
 library(ggplot2)
 library(xgboost)
 library(foreach)
 library(doSNOW)
-library(parallel)
 library(iterators)
 library(pdp)
 library(tcltk)
@@ -66,37 +99,3 @@ readData = function(x,filterTime=-1) {
   }
   return(d)
 }
-
-termination_point = "h_OCHCTP"
-file_location = "C:/"
-# choose one of auc,phi,acc,sens,spec,balacc
-metric = "balacc"
-n_folds = 10
-
-# specify predictor variables
-vars = c(
-  "BerPreFecAve",
-  "BerPreFecMax",
-  "BerPreFecMin",
-  "ChanOchChromaticDispersionAve",
-  "ChanOchChromaticDispersionMax",
-  "ChanOchChromaticDispersionMin",
-  "ChanOchLBCAve",
-  "ChanOchLBCMax",
-  "ChanOchLBCMin",
-  "ChanOchOptAve",
-  "ChanOchOptMax",
-  "ChanOchOptMin",
-  "PmType",
-  "PmdAve",
-  "PmdMax",
-  "PmdMin",
-  "Qave",
-  "Qmax",
-  "Qmin",
-  "SoPmdAve",
-  "SoPmdMax",
-  "SoPmdMin",
-  "alarms"
-)
-var.formula = as.formula(paste0("fail~",paste(vars,collapse="+")))
