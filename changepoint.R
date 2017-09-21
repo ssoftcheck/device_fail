@@ -1,96 +1,68 @@
-library(foreach)
-library(doParallel)
-library(ecp)
-library(bcp)
-library(data.table)
-library(lubridate)
-library(ggplot2)
-library(progress)
+source("setup_changepoint.R")
 
-readData = function(x) {
-  # filter days to save time/space
-  d=fread(x)
-  d[,timestamp:=ymd_hms(timestamp)]
-  failtime = min(d[fail==1,timestamp])
-  if(!is.na(failtime))
-    d = d[difftime(failtime,timestamp,units="hours") < 24]
-  return(d)
-}
+files = grep(termination_point,list.files(file_location,full.names=TRUE),value=TRUE,perl = TRUE)
+file.dates = gsub("(.+_)(\\d{4}-\\d{2}\\-\\d{2})(.csv)$","\\2",files)
+files = split(files,file.dates)
+ds = lapply(files,function(x) Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,x)))
 
-setwd("C:/Users/AB58342/Documents/device failures/data/failure_files")
-file.names = grep("^h\\_.+csv$",list.files(),value=TRUE)
-term.point = regexpr("^h\\_[A-Z]+",file.names,perl=TRUE)
-term.point = regmatches(file.names,term.point)
-
-file.names = split(file.names,term.point)
-
-files = lapply(file.names,function(x) Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(readData,x))[order(node_id,termination_point,timestamp)])
-
-varcheck = Map(function(x) melt(x[,lapply(.SD,function(z) c(miss=sum(is.na(z)),nomiss=sum(!is.na(z)))),by=node_id],id.vars="node_id"),files)
-varcheck = Map(function(x) x[,.(miss=value[1],nomiss=value[2]),by=.(node_id,variable)],varcheck)
-varcheck = Map(function(x) x[nomiss > 0],varcheck)
-for(i in names(varcheck)) {
-  varcheck[[i]][,h := i]
-}
-varcheck = Reduce(rbind,varcheck)
-fwrite(varcheck,"variable_sets.csv")
-
-
-pbar = progress_bar$new(total=length(files),format="[:bar] :current :percent :elapsed")
-cl = makeCluster(2)
-registerDoParallel(cl)
-
+pbar = progress_bar$new(total=length(node_id),format="[:bar] :current :percent :elapsed")
+cl = makeCluster(detectCores()/2)
+registerDoSNOW(cl)
+opts = list(progress=function(incr) setTkProgressBar(pb,value = incr,label=sprintf("%3.2f%%",100*incr/nrow(segments))))
 pval.next = 0.05
-for(i in names(files)) {
-  segments = unique(files[[i]][,.(node_id,termination_point)])
+for(item in names(ds)) {
+  each = ds[[item]]
+  vars = unlist(lapply(sapply(each,class),paste,collapse=""))
+  vars = names(vars[!(vars %in% c("character","factor","logical"))])
+  vars = setdiff(vars,c("timestamp","fail","validity","NumSampleSecs","chassis_id","CardType","alarms"))
+
+  segments = unique(each[,.(node_id,termination_point)])
   
-  tests = foreach(x = iter(segments,by="row"),.packages=c("data.table","ecp"),.multicombine=TRUE) %dopar% {
-    print(x)
-    selection = with(files[[i]],node_id==x$node_id & termination_point==x$termination_point)
-    vlist = setdiff(names(files[[i]])[sapply(files[[i]][selection],class) %in% c("numeric","integer")],c("timestamp","fail","validity","NumSampleSecs"))
-    v = sapply(files[[i]][selection,vlist,with=FALSE],var)
-    vlist = vlist[v > 0 & !is.na(v)]
-    result = e.divisive(as.matrix(files[[i]][selection,vlist,with=FALSE]),sig.lvl=pval.next,R=200,alpha=1)
-    # result = e.agglo(X = as.matrix(files[[i]][selection,vlist,with=FALSE]),alpha = 1)
-    result$vars = vlist
+  pb = tkProgressBar(min = 0,max=nrow(segments),title = paste("Changepoint Progress",item),label = "0%")
+  tests = foreach(x = iter(segments,by="row"),.packages=c("data.table","ecp"),.multicombine=TRUE,.options.snow=opts) %dopar% {
+    selection = with(each,node_id==x$node_id & termination_point==x$termination_point)
+    
+    varcheck = melt(each[selection,lapply(.SD,function(z) c(miss=sum(is.na(z)),nomiss=sum(!is.na(z)),variance=var(z,na.rm=TRUE))),by=node_id,.SDcols=vars])
+    varcheck = varcheck[,.(miss=value[1],nomiss=value[2],variance=value[3]),by=.(node_id,variable)]
+    varcheck = varcheck[nomiss > 0 & variance > 0,variable]
+    
+    result = e.divisive(as.matrix(each[selection,varcheck,with=FALSE]),sig.lvl=pval.next,R=200,alpha=1)
+    result$vars = varcheck
     result$name = paste(x,collapse = " ")
     return(result)
   }
-  # sep = which(names(tests) ==  "name")
-  # sep = cbind(c(1,sep[-length(sep)]+1),sep)
-  # tests = apply(sep,1,function(x) tests[x[1]:x[2]])
+  close(pb)
   names(tests) = unlist(Map(function(x) x$name,tests))
 
-  
-  plots = foreach(x = iter(segments,by="row"),.packages=c("data.table","ggplot2"),.multicombine = TRUE) %do% {
+  pb = tkProgressBar(min = 0,max=nrow(segments),title = paste("Plot Progress",item),label = "0%")
+  plots = foreach(x = iter(segments,by="row"),.packages=c("data.table","ggplot2","data.table"),.multicombine = TRUE,.options.snow=opts) %dopar% {
     label = paste(x,collapse=" ")
-    selection = with(files[[i]],node_id==x$node_id & termination_point==x$termination_point)
+    selection = with(each,node_id==x$node_id & termination_point==x$termination_point)
     if(label %in% names(tests)) {
       result = vector("list",length(tests[[label]]$vars))
-      names(result) = tests[[label]]$vars
-      ds = files[[i]][selection,c(tests[[label]]$vars,"chassis_id","node_id","termination_point","fail","timestamp"),with=FALSE]
-      ds[,cp:=0]
-      for(y in tests[[label]]$vars) {
-        ds[tests[[label]]$estimates[c(-1,-length(tests[[label]]$estimates))],cp := 1]
-        failure = as.numeric(ds[fail==1][["timestamp"]])
-        cp = as.numeric(ds[cp==1][["timestamp"]])
+      names(result) = as.character(tests[[label]]$vars)
+      subd = each[selection,c(as.character(tests[[label]]$vars),"chassis_id","node_id","termination_point","fail","timestamp"),with=FALSE]
+      subd[,cp:=0]
+      for(y in as.character(tests[[label]]$vars)) {
+        subd[tests[[label]]$estimates[c(-1,-length(tests[[label]]$estimates))],cp := 1]
+        failure = as.numeric(subd[fail==1,timestamp][1])
+        cp = as.numeric(subd[cp==1,timestamp])
 
-        p = ggplot(ds) + aes_string(x="timestamp",y=y) + geom_line() + ylab(y) + xlab("Time") + ggtitle(paste(i,gsub(" ","\n",label),sep="\n")) +
+        p = ggplot(subd) + aes_string(x="timestamp",y=y) + geom_line() + ylab(y) + xlab("Time") + ggtitle(paste(label,gsub(" ","\n",label),sep="\n")) +
           geom_vline(xintercept = failure,color="red",size=1.5) + geom_vline(xintercept = cp,color="blue",size=1)
 
         result[[y]] = list(plot=p)
       }
-      result$data = ds
+      result$data = subd
       return(result)
     }
     else
       return(NULL)
   }
+  close(pb)
   names(plots) = names(tests)
-  rm(label,selection,result,x,y,ds,p,failure,cp)
 
-  
-  pdf(paste0(i,"_changepoint_plots.pdf"))
+  pdf(paste0(item,"_changepoint_plots.pdf"))
   Map(function(x) Map(function(y) {
     if(!is.null(y))
       print(y$plot)
@@ -98,9 +70,8 @@ for(i in names(files)) {
   dev.off()
 
   # data output
-  # out.data = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(function(x) x$data,plots))
-  # if(class(out.data)[1] ==  "data.table")
-  #   fwrite(out.data,paste0(i,"_changepoint_data.csv"))
+  out.data = Reduce(function(a,b) rbind(a,b,fill=TRUE),Map(function(x) x$data,plots))
+  fwrite(out.data,paste0(item,"_changepoint_data.csv"))
   
   pbar$tick()
 }
