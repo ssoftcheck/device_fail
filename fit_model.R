@@ -1,4 +1,4 @@
-source("setup.R")
+source("setup_xgboost.R.R")
 
 # read data
 files = grep(termination_point,list.files(file_location,full.names=TRUE),value=TRUE,perl = TRUE)
