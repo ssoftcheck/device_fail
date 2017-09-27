@@ -10,12 +10,13 @@ library(lubridate)
 library(ggplot2)
 library(progress)
 library(tcltk)
+library(lubridate)
 library(iterators)
 
 readData = function(x,filterTime=-1) {
   # filter days to save time/space
   d=fread(x)
-  d[,timestamp:=lubridate::ymd_hms(timestamp)]
+  d[,timestamp:=ymd_hms(timestamp)]
   d = d[order(termination_point,timestamp)]
   if(filterTime > 0) {
     failtime = min(d[fail==1,timestamp])
