@@ -10,7 +10,6 @@ library(lubridate)
 library(ggplot2)
 library(progress)
 library(tcltk)
-library(lubridate)
 library(iterators)
 
 readData = function(x,filterTime=-1) {
