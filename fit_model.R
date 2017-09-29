@@ -114,7 +114,7 @@ stopCluster(cl)
 close(pb)
 
 # plot partial dependence
-pdf(paste0(termination_point,"_top_15_parital_dependence_plots.pdf"))
+pdf(paste0(termination_point,"_top_15_partial_dependence_plots.pdf"))
 for(i in names(pd))
   print(ggplot(pd[[i]]) + aes_string(x=i,y="yhat") + geom_point() + geom_line() + geom_smooth() + ylab("Failure Probability"))
 dev.off()
